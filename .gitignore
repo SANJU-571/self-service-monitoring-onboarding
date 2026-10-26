@@ -1,0 +1,19 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+plan.json
+plan-summary.md
+crash.log
+terraform/backend.hcl
+*.auto.tfvars
+
+# Python
+__pycache__/
+.pytest_cache/
+.venv/
+test-results.xml
+
+# Secrets
+.env

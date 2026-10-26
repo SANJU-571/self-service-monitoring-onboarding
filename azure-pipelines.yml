@@ -1,0 +1,156 @@
+# Self-service monitoring onboarding pipeline
+#
+#  Pull request  -> Validate + Plan  (reviewers see exactly what will change)
+#  Merge to main -> Validate + Plan + Apply (after approval on the environment)
+#
+# One-time setup (see README):
+#   * Azure Resource Manager service connection named in azureServiceConnection
+#   * Variable group "datadog-onboarding" with:
+#       DD_API_KEY, DD_APP_KEY (secret), DD_API_URL,
+#       TFSTATE_RESOURCE_GROUP, TFSTATE_STORAGE_ACCOUNT
+#     (can be linked to Azure Key Vault so keys never live in Azure DevOps)
+#   * Environment "datadog-monitoring" with an approval check
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include: [teams, terraform, schema, tools, azure-pipelines.yml, pipelines]
+
+pr:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: datadog-onboarding
+  - name: azureServiceConnection
+    value: azure-monitoring-onboarding
+  - name: tfVersion
+    value: "1.9.8"
+  - name: tfDir
+    value: terraform
+  - name: pythonVersion
+    value: "3.11"
+
+stages:
+  # ---------------------------------------------------------------- Validate
+  - stage: Validate
+    jobs:
+      - job: validate
+        displayName: Validate onboarding files and code
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - bash: pip install -r requirements.txt
+            displayName: Install Python dependencies
+
+          - bash: python tools/validate_teams.py teams
+            displayName: Validate onboarding requests
+
+          - bash: python -m pytest --junitxml=test-results.xml
+            displayName: Run unit tests
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFiles: test-results.xml
+              testRunTitle: Onboarding tooling tests
+
+          - template: pipelines/templates/install-terraform.yml
+            parameters:
+              version: $(tfVersion)
+
+          - bash: |
+              set -euo pipefail
+              terraform -chdir=$(tfDir) fmt -check -recursive
+              terraform -chdir=$(tfDir) init -backend=false -input=false
+              terraform -chdir=$(tfDir) validate
+            displayName: terraform fmt + validate
+
+  # -------------------------------------------------------------------- Plan
+  - stage: Plan
+    dependsOn: Validate
+    jobs:
+      - job: plan
+        displayName: Plan Datadog changes
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(pythonVersion)
+
+          - template: pipelines/templates/install-terraform.yml
+            parameters:
+              version: $(tfVersion)
+
+          - template: pipelines/templates/terraform-init.yml
+            parameters:
+              serviceConnection: ${{ variables.azureServiceConnection }}
+              tfDir: $(tfDir)
+
+          - task: AzureCLI@2
+            displayName: terraform plan
+            inputs:
+              azureSubscription: ${{ variables.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                terraform -chdir=$(tfDir) plan -input=false -out=tfplan \
+                  -var="datadog_api_url=$(DD_API_URL)"
+                terraform -chdir=$(tfDir) show -json tfplan > plan.json
+                python tools/plan_summary.py plan.json -o plan-summary.md
+                cat plan-summary.md
+                echo "##vso[task.uploadsummary]$(System.DefaultWorkingDirectory)/plan-summary.md"
+            env:
+              DD_API_KEY: $(DD_API_KEY)
+              DD_APP_KEY: $(DD_APP_KEY)
+
+          - publish: $(tfDir)/tfplan
+            artifact: tfplan
+            displayName: Publish plan
+
+  # ------------------------------------------------------------------- Apply
+  - stage: Apply
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - deployment: apply
+        displayName: Apply to Datadog
+        environment: datadog-monitoring # add an approval check on this environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - template: pipelines/templates/install-terraform.yml
+                  parameters:
+                    version: $(tfVersion)
+
+                - template: pipelines/templates/terraform-init.yml
+                  parameters:
+                    serviceConnection: ${{ variables.azureServiceConnection }}
+                    tfDir: $(tfDir)
+
+                - download: current
+                  artifact: tfplan
+
+                - task: AzureCLI@2
+                  displayName: terraform apply
+                  inputs:
+                    azureSubscription: ${{ variables.azureServiceConnection }}
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      cp "$(Pipeline.Workspace)/tfplan/tfplan" $(tfDir)/tfplan
+                      terraform -chdir=$(tfDir) apply -input=false tfplan
+                      terraform -chdir=$(tfDir) output dashboards
+                  env:
+                    DD_API_KEY: $(DD_API_KEY)
+                    DD_APP_KEY: $(DD_APP_KEY)

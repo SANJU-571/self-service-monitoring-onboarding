@@ -1,0 +1,4 @@
+PyYAML>=6.0
+jsonschema>=4.18
+datadog-api-client>=2.30
+pytest>=8.0

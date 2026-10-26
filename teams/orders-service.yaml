@@ -1,0 +1,18 @@
+team: orders
+service: orders-service
+env: dev
+owner: orders-team@example.com
+
+notify:
+  - "@orders-team@example.com"
+
+monitors:
+  latency_ms:
+    warning: 300
+    critical: 600
+  error_rate_pct:
+    warning: 1
+    critical: 3
+  # cpu_pct omitted: this team doesn't want a CPU monitor
+  no_traffic:
+    enabled: false

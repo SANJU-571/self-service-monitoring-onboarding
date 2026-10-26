@@ -1,0 +1,5 @@
+# Copy to backend.hcl (git-ignored) and fill in the values printed by tools/bootstrap_state.sh
+resource_group_name  = "rg-monitoring-tfstate"
+storage_account_name = "stmontfstateXXXX"
+container_name       = "tfstate"
+key                  = "monitoring-onboarding.tfstate"

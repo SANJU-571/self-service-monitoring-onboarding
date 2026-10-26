@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Monitoring onboarding request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["team", "service", "env", "owner", "notify", "monitors"],
+  "properties": {
+    "team": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,30}$" },
+    "service": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$" },
+    "env": { "type": "string", "enum": ["dev", "qa", "prod"] },
+    "owner": { "type": "string", "format": "email" },
+    "notify": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^@\\S+$" }
+    },
+    "runbook_url": { "type": "string", "pattern": "^https://" },
+    "monitors": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "latency_ms": { "$ref": "#/$defs/threshold" },
+        "error_rate_pct": { "$ref": "#/$defs/threshold" },
+        "cpu_pct": { "$ref": "#/$defs/threshold" },
+        "no_traffic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "properties": { "enabled": { "type": "boolean" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warning", "critical"],
+      "properties": {
+        "warning": { "type": "number", "exclusiveMinimum": 0 },
+        "critical": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    }
+  }
+}

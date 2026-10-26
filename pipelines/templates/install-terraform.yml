@@ -1,0 +1,15 @@
+parameters:
+  - name: version
+    type: string
+
+steps:
+  - bash: |
+      set -euo pipefail
+      dest="$(Agent.ToolsDirectory)/terraform/${{ parameters.version }}"
+      if [ ! -x "$dest/terraform" ]; then
+        mkdir -p "$dest"
+        curl -sSLo /tmp/terraform.zip "https://releases.hashicorp.com/terraform/${{ parameters.version }}/terraform_${{ parameters.version }}_linux_amd64.zip"
+        unzip -o -q /tmp/terraform.zip -d "$dest"
+      fi
+      echo "##vso[task.prependpath]$dest"
+    displayName: Install Terraform ${{ parameters.version }}
