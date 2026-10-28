@@ -62,6 +62,10 @@ flowchart LR
 You need: an Azure subscription, an Azure DevOps project, and a Datadog account
 (the free 14-day trial works).
 
+New to these tools? [docs/setup-walkthrough.md](docs/setup-walkthrough.md) walks through
+every step on Windows with the reason behind it and what each output means.
+[docs/windows-setup.md](docs/windows-setup.md) is the short version.
+
 ### 1. Datadog keys
 In Datadog: **Organization Settings → API Keys** (create one) and **Application Keys**
 (create one). Note your site from the URL, e.g. `us5.datadoghq.com`.
