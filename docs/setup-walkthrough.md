@@ -5,6 +5,8 @@ fire and recover. Every step says **what** you do, **why** you do it, and **what
 output means**. Commands are for Windows Command Prompt (CMD); the
 [README](../README.md) has the bash equivalents and
 [windows-setup.md](windows-setup.md) is the short reference version.
+For a plain-English explanation of what the project is for, see
+[project-explained.md](project-explained.md).
 
 | Phase | Result | Time |
 |---|---|---|
