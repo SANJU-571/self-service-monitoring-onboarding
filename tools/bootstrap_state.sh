@@ -37,6 +37,8 @@ az storage account blob-service-properties update \
   --output none
 
 echo "Creating container $CONTAINER"
+# container-rm goes through Azure Resource Manager, so the subscription Owner role
+# is enough. (--auth-mode login would need the Storage Blob Data Contributor role.)
 az storage container create \
 az storage container-rm create \
   --storage-account "$ACCOUNT" \
