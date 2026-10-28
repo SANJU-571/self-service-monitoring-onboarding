@@ -62,6 +62,9 @@ flowchart LR
 You need: an Azure subscription, an Azure DevOps project, and a Datadog account
 (the free 14-day trial works).
 
+New to the idea? [docs/project-explained.md](docs/project-explained.md) explains what this
+project does and why, with everyday examples and no jargon.
+
 New to these tools? [docs/setup-walkthrough.md](docs/setup-walkthrough.md) walks through
 every step on Windows with the reason behind it and what each output means.
 [docs/windows-setup.md](docs/windows-setup.md) is the short version.
