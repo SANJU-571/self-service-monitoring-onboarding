@@ -13,7 +13,8 @@ RESOURCE_GROUP="rg-monitoring-tfstate"
 CONTAINER="tfstate"
 # Storage account names must be globally unique, 3-24 lowercase letters/digits.
 ACCOUNT="stmontfstate$(openssl rand -hex 4)"
-
+echo "Making sure the storage provider is registered (needed on new subscriptions)"
+az provider register --namespace Microsoft.Storage --wait
 echo "Creating resource group $RESOURCE_GROUP in $LOCATION"
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 
@@ -37,9 +38,9 @@ az storage account blob-service-properties update \
 
 echo "Creating container $CONTAINER"
 az storage container create \
+az storage container-rm create \
+  --storage-account "$ACCOUNT" \
   --name "$CONTAINER" \
-  --account-name "$ACCOUNT" \
-  --auth-mode login \
   --output none
 
 cat <<EOF
