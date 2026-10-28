@@ -1,6 +1,6 @@
 import random
 
-from tools.emit_demo_metrics import build_series, generate_sample, main
+from tools.emit_demo_metrics import build_series, generate_sample, main, submit
 
 
 def test_normal_traffic_stays_under_thresholds():
@@ -39,3 +39,46 @@ def test_dry_run_needs_no_key(monkeypatch):
 def test_missing_key_fails(monkeypatch):
     monkeypatch.delenv("DD_API_KEY", raising=False)
     assert main(["--service", "x", "--count", "1"]) == 1
+
+
+class FakeApi:
+    """Stands in for MetricsApi: raises the given error, or records the call."""
+
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = 0
+
+    def submit_metrics(self, body):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+
+
+def test_submit_succeeds():
+    api = FakeApi()
+    assert submit(api, payload=None) is True
+    assert api.calls == 1
+
+
+def test_connection_reset_does_not_stop_the_emitter():
+    # The WinError 10054 crash seen on Windows: the connection drops mid-request.
+    assert submit(FakeApi(ConnectionResetError(10054, "connection reset")), None) is True
+
+
+def test_urllib3_protocol_error_does_not_stop_the_emitter():
+    from urllib3.exceptions import ProtocolError
+
+    error = ProtocolError("Connection aborted.", ConnectionResetError(10054, "reset"))
+    assert submit(FakeApi(error), None) is True
+
+
+def test_server_error_is_retried():
+    from datadog_api_client.exceptions import ApiException
+
+    assert submit(FakeApi(ApiException(status=503, reason="Service Unavailable")), None) is True
+
+
+def test_bad_api_key_stops_the_emitter():
+    from datadog_api_client.exceptions import ApiException
+
+    assert submit(FakeApi(ApiException(status=403, reason="Forbidden")), None) is False
