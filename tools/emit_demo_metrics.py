@@ -76,6 +76,27 @@ def build_series(sample: Sample, tags: list[str], timestamp: int, interval: int)
     ]
 
 
+def submit(api, payload) -> bool:
+    """Send one payload. Returns False only when retrying is pointless (bad API key).
+
+    Network failures (connection reset, timeout, DNS) and other API errors are logged
+    and skipped: the next interval tries again, like a real agent would.
+    """
+    from datadog_api_client.exceptions import ApiException
+    from urllib3.exceptions import HTTPError
+
+    try:
+        api.submit_metrics(body=payload)
+    except ApiException as exc:
+        log.error("Datadog rejected the submission (%s): %s", exc.status, exc.reason)
+        if exc.status in (401, 403):
+            log.error("Check DD_API_KEY and DD_SITE")
+            return False
+    except (HTTPError, OSError) as exc:
+        log.warning("Network error, will retry next interval: %s", exc)
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--service", required=True)
@@ -122,16 +143,11 @@ def main(argv: list[str] | None = None) -> int:
         log.info("requests=%d errors=%d latency=%.0fms cpu=%.0f%%",
                  sample.requests, sample.errors, sample.latency_ms, sample.cpu_pct)
         if api is not None:
-            from datadog_api_client.exceptions import ApiException
             from datadog_api_client.v2.model.metric_payload import MetricPayload
 
             payload = MetricPayload(series=build_series(sample, tags, int(time.time()), args.interval))
-            try:
-                api.submit_metrics(body=payload)
-            except ApiException as exc:
-                log.error("Datadog rejected the submission (%s): %s", exc.status, exc.reason)
-                if exc.status in (401, 403):
-                    return 1
+            if not submit(api, payload):
+                return 1
         sent += 1
         if running and (args.count == 0 or sent < args.count):
             time.sleep(args.interval)
