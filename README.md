@@ -64,6 +64,7 @@ You need: an Azure subscription, an Azure DevOps project, and a Datadog account
 
 New to the idea? [docs/project-explained.md](docs/project-explained.md) explains what this
 project does and why, with everyday examples and no jargon.
+[docs/project-journey.md](docs/project-journey.md) tells the story of how it was built.
 
 New to these tools? [docs/setup-walkthrough.md](docs/setup-walkthrough.md) walks through
 every step on Windows with the reason behind it and what each output means.
@@ -105,7 +106,10 @@ python tools/emit_demo_metrics.py --service payments-api --env dev --incident   
 1. **Service connection:** Project Settings → Service connections → Azure Resource Manager → **Workload identity federation (automatic)**, scoped to the `rg-monitoring-tfstate` resource group, named `azure-monitoring-onboarding`. The pipeline passes its short-lived OIDC token to Terraform (`pipelines/scripts/arm-auth-env.sh`), so no Azure secret is stored anywhere.
 2. **Variable group** `datadog-onboarding` (Pipelines → Library): `DD_API_KEY` and `DD_APP_KEY` (mark as secret), `DD_API_URL`, `TFSTATE_RESOURCE_GROUP`, `TFSTATE_STORAGE_ACCOUNT`. Optionally link it to Azure Key Vault.
 3. **Environment** `datadog-monitoring` (Pipelines → Environments) with an **Approvals** check.
-4. Create the pipeline from `azure-pipelines.yml`.
+4. **Free build machine:** Organization settings → Billing → **Set up billing** with a pay-as-you-go Azure subscription. This turns on the free tier (one Microsoft-hosted job, 1,800 minutes a month); Azure free trial subscriptions can't be linked.
+5. Create the pipeline from `azure-pipelines.yml` (Pipelines → Create Pipeline → GitHub → existing YAML file), and **Permit** the service connection, variable group and environment on the first run.
+
+[docs/setup-walkthrough.md](docs/setup-walkthrough.md#phase-7-the-azure-devops-pipeline) covers each step, why it's needed, and troubleshooting.
 
 ## Onboarding a new service
 1. Copy `teams/payments-api.yaml` to `teams/<your-service>.yaml` (or `<your-service>-prod.yaml`).
