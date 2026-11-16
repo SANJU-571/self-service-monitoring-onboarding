@@ -102,7 +102,7 @@ python tools/emit_demo_metrics.py --service payments-api --env dev --incident   
 ```
 
 ### 5. Azure DevOps pipeline
-1. **Service connection:** Project Settings → Service connections → Azure Resource Manager, named `azure-monitoring-onboarding`, with access to the state resource group.
+1. **Service connection:** Project Settings → Service connections → Azure Resource Manager → **Workload identity federation (automatic)**, scoped to the `rg-monitoring-tfstate` resource group, named `azure-monitoring-onboarding`. The pipeline passes its short-lived OIDC token to Terraform (`pipelines/scripts/arm-auth-env.sh`), so no Azure secret is stored anywhere.
 2. **Variable group** `datadog-onboarding` (Pipelines → Library): `DD_API_KEY` and `DD_APP_KEY` (mark as secret), `DD_API_URL`, `TFSTATE_RESOURCE_GROUP`, `TFSTATE_STORAGE_ACCOUNT`. Optionally link it to Azure Key Vault.
 3. **Environment** `datadog-monitoring` (Pipelines → Environments) with an **Approvals** check.
 4. Create the pipeline from `azure-pipelines.yml`.
