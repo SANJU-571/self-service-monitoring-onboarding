@@ -1,12 +1,13 @@
-# Setup walkthrough: from zero to firing alerts
+# Setup walkthrough: from zero to an automated pipeline
 
 This guide follows the project from an empty Windows laptop to Datadog monitors that
-fire and recover. Every step says **what** you do, **why** you do it, and **what the
+fire and recover, deployed by an approval-gated pipeline. Every step says **what** you do, **why** you do it, and **what the
 output means**. Commands are for Windows Command Prompt (CMD); the
 [README](../README.md) has the bash equivalents and
 [windows-setup.md](windows-setup.md) is the short reference version.
 For a plain-English explanation of what the project is for, see
-[project-explained.md](project-explained.md).
+[project-explained.md](project-explained.md), and for the story of how it was built, see
+[project-journey.md](project-journey.md).
 
 | Phase | Result | Time |
 |---|---|---|
@@ -16,6 +17,7 @@ For a plain-English explanation of what the project is for, see
 | [4. Terraform state storage](#phase-4-terraform-state-storage-in-azure) | Private, versioned storage for state | ~20 min |
 | [5. Datadog and the first apply](#phase-5-datadog-and-the-first-terraform-apply) | 6 monitors and 2 dashboards | ~1 h |
 | [6. Demo traffic and alerts](#phase-6-demo-traffic-and-alerts) | Alerts fire and recover | ~30 min |
+| [7. Azure DevOps pipeline](#phase-7-the-azure-devops-pipeline) | Validate, plan and approval-gated apply on every change | ~1-2 h |
 | [Working with Git](#working-with-git-branch-commit-pull-request) | Changes reach `main` through pull requests | ~15 min each |
 
 ## The idea in one minute
@@ -223,6 +225,10 @@ The `State` column must say `Enabled`.
   Azure portal under **Subscriptions**.
 - `Invalid selection` at the prompt means you typed the name; type the number.
 - The `[Survey]` banner can be ignored.
+- `AADSTS50076 ... you must use multi-factor authentication` followed by `No subscriptions
+  found`: Azure now requires MFA for management sign-ins. Sign in to your tenant directly
+  with `az login --tenant <tenant ID>` (the ID is printed in the error) and complete the
+  MFA prompt.
 
 ---
 
@@ -481,6 +487,21 @@ change the YAML file rather than edit the monitor by hand.
 
 The monitors show **No Data** and the graphs are empty until something sends metrics.
 
+### 5.8 Moving to a new Datadog account
+
+If a trial ends or you switch accounts, everything can be rebuilt from the files.
+
+1. Create an API key and an application key in the new account and save them.
+2. Load them with `set DD_API_KEY=...` and `set DD_APP_KEY=...`.
+3. Run `terraform plan`. The state still lists the old monitor IDs, but the new account
+   has never heard of them, so the plan shows `8 to add, 0 to change, 0 to destroy`.
+4. Run `terraform apply`. All monitors and dashboards are recreated; only the dashboard
+   links change.
+5. Update `DD_API_KEY` and `DD_APP_KEY` in the pipeline's variable group (Phase 7).
+
+This is the payoff of infrastructure as code: nothing was configured by hand, so nothing
+is lost.
+
 ---
 
 ## Phase 6: Demo traffic and alerts
@@ -583,6 +604,165 @@ notifies, because `notify_no_data` is on. That is the "app has gone silent" aler
 
 ---
 
+## Phase 7: The Azure DevOps pipeline
+
+**Why:** until now a person has been the pipeline, typing validate, test, plan and apply
+by hand. The pipeline does the same steps automatically on every pull request and every
+merge, and nothing reaches Datadog until someone approves the plan:
+
+```
+Pull request opened   ->  Validate  ->  Plan                    (result shown on the PR)
+Merged to main        ->  Validate  ->  Plan  ->  approval  ->  Apply
+```
+
+Nobody needs Terraform on their laptop or holds the Datadog keys personally, and every
+change is checked the same way.
+
+### 7.1 Upgrade the Azure subscription and set a budget
+
+Azure DevOps can't link to an Azure **free trial** subscription, and a free account is
+disabled when its credit period ends, taking the Terraform state storage with it.
+Upgrading to **pay-as-you-go** fixes both.
+
+1. Azure portal > **Subscriptions** > your subscription > **Upgrade** (or, on the
+   "Select an offer" page, the **Click here to upgrade** link on the Pay-As-You-Go card).
+   Don't sign up for a new Free Trial.
+2. Choose **no technical support** (free). Remaining free credit is kept until it expires.
+3. Set a budget so you are emailed long before any real cost: **Cost Management** >
+   **Budgets** > **Add**, monthly, $5, alerts at 50% and 100% of actual spend.
+
+The project costs a few cents a month (the storage account). The budget only emails; it
+never blocks anything.
+
+### 7.2 Create the organization and project
+
+1. Sign in at https://dev.azure.com with the **same Microsoft account as the Azure
+   subscription**.
+2. If a directory dropdown is shown, pick the directory that holds the subscription
+   (for example **Default Directory**). Billing in 7.3 needs both in the same directory.
+3. **Create new organization**, then a project named `monitoring-onboarding`,
+   visibility **Private**.
+
+The code stays on GitHub; Azure DevOps only runs the pipeline and reads the repo.
+
+### 7.3 Link billing to turn on the free build machine
+
+New organizations get no Microsoft-hosted build machines until they are linked to an
+Azure subscription. The old request form is gone.
+
+1. **Organization settings** > **Billing** > **Set up billing** > select the subscription
+   > **Save** (direct link: `https://dev.azure.com/<organization>/_settings/billing`).
+2. Check the page: **MS Hosted CI/CD** shows **1800 minutes** free, and **Paid parallel
+   jobs** shows **0**. Leave the paid boxes at 0 and GitHub-hosted agents **Off**.
+
+Linking buys nothing; it activates the free tier: one Microsoft-hosted job, up to
+60 minutes per run, 1,800 minutes a month.
+
+### 7.4 Create the service connection
+
+A service connection is a non-human identity (a "staff badge for the robot") that lets
+the pipeline reach Azure. People sign in with MFA; pipelines can't, so they use this.
+
+1. **Project settings** (gear, bottom left) > **Service connections**
+   (direct link: `https://dev.azure.com/<organization>/<project>/_settings/adminservices`).
+2. **Create service connection** > **Azure Resource Manager** > **Next**.
+3. Fill in:
+
+| Field | Value |
+|---|---|
+| Identity type | App registration (automatic) |
+| Credential | **Workload identity federation** |
+| Scope level | Subscription |
+| Subscription | your subscription |
+| Resource group | `rg-monitoring-tfstate` |
+| Name | `azure-monitoring-onboarding` (must match `azure-pipelines.yml`) |
+| Grant access permission to all pipelines | Leave unchecked |
+
+Azure DevOps creates an app registration and gives it **Contributor** on that one
+resource group only (least privilege).
+
+**How the pipeline uses it:** with workload identity federation there is no stored
+password. On each run Azure DevOps gets a short-lived OIDC token from Microsoft Entra
+ID. The `AzureCLI@2` steps set `addSpnToEnvironment: true`, and
+`pipelines/scripts/arm-auth-env.sh` hands the token to Terraform's azurerm backend
+through `ARM_USE_OIDC`, `ARM_OIDC_TOKEN`, `ARM_CLIENT_ID`, `ARM_TENANT_ID` and
+`ARM_SUBSCRIPTION_ID`. Without that, Terraform couldn't read or lock its state inside the
+pipeline.
+
+### 7.5 Create the variable group
+
+A variable group is a locked safe the pipeline reads at run time. Secret values are
+encrypted, hidden in the web page and masked as `***` in logs. `azure-pipelines.yml`
+looks for a group named exactly `datadog-onboarding`.
+
+**Pipelines** > **Library** > **+ Variable group** > name `datadog-onboarding`:
+
+| Name | Value | Secret? |
+|---|---|---|
+| `DD_API_KEY` | the Datadog API key itself (not the path to your keys file) | Yes: click the padlock |
+| `DD_APP_KEY` | the Datadog application key | Yes: click the padlock |
+| `DD_API_URL` | `https://api.datadoghq.com/` (or your site's API address) | No |
+| `TFSTATE_RESOURCE_GROUP` | `rg-monitoring-tfstate` | No |
+| `TFSTATE_STORAGE_ACCOUNT` | your storage account name | No |
+
+Type the plain values by hand. A pasted invisible Tab or space at the end breaks the run
+(see Troubleshooting). Only the keys are secret: the other values are addresses, and the
+service connection controls access.
+
+### 7.6 Create the approval gate
+
+The Apply stage is a deployment job to an **environment** named `datadog-monitoring`.
+An approval check on that environment pauses the run until a named person approves.
+
+1. **Pipelines** > **Environments** > **Create environment** > name
+   `datadog-monitoring`, resource **None** > **Create**.
+2. **...** (top right) > **Approvals and checks** > **+** > **Approvals** > add yourself
+   as approver > **Create**.
+
+The check appears as "All approvers must approve", type Approvals, timeout 30 days. For a
+solo project leave "allow approvers to approve their own runs" on; on a team, require a
+different person than the author (separation of duties).
+
+### 7.7 Create the pipeline
+
+1. **Pipelines** > **Pipelines** > **Create Pipeline** > **GitHub (YAML)**.
+2. Authorize Azure Pipelines on GitHub as the repo owner. When asked to install the
+   **Azure Pipelines** GitHub app, choose **Only select repositories**, pick this repo,
+   then **Approve & install**. The app lets pull requests trigger the pipeline and shows
+   the result on the PR.
+3. Select the repo > **Existing Azure Pipelines YAML file** > branch `main`, path
+   `/azure-pipelines.yml` > **Continue**.
+4. Don't edit the YAML on the review screen (edits there commit straight to `main`).
+   Click **Run**.
+5. The first run asks for permission to use the service connection, variable group and
+   environment: **View** > **Permit** for each.
+
+### 7.8 Read the first run
+
+| Stage | What it does | Expected |
+|---|---|---|
+| Validate | Installs Python, validates team files, runs 33 tests, `terraform fmt -check` and `validate` | Green; test results on the **Tests** tab |
+| Plan | Signs in with the OIDC token, `terraform init` against the Azure state, `terraform plan -out=tfplan`, publishes a per-service summary | Green. If you already applied from a laptop: **No changes** |
+| Apply | Waits for approval, then applies the **saved** plan file | Approve with **Review** > **Approve**; green |
+
+Apply runs the exact plan file the reviewer saw, so what was approved is exactly what is
+built.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `401 - Uh-oh, you do not have access` | The browser is signed in to a different Microsoft account. Sign out and sign in with the account that owns the organization, or use a separate browser profile |
+| The old parallelism request link opens a Microsoft Forms welcome page | The form was retired; link billing instead (7.3) |
+| Subscription not offered when linking billing | Free trial subscriptions aren't supported, or the organization is in a different directory (7.1, 7.2) |
+| `invalid API URL ... "https://api.datadoghq.com/\t" ... invalid control character` | A hidden Tab was pasted at the end of `DD_API_URL`. Clear the value, type it by hand, save, **Rerun failed jobs** |
+| `No credentials from the service connection` | An `AzureCLI@2` step is missing `addSpnToEnvironment: true` |
+| `terraform fmt -check` fails in Validate | Run `terraform fmt -recursive` in `terraform/` and commit through a pull request |
+| Datadog `403` or `invalid key` in Plan | Re-enter `DD_API_KEY` and `DD_APP_KEY` carefully; check they belong to the account your `DD_API_URL` points at |
+| Warning: `ubuntu-latest` label will migrate to Ubuntu 26 | Only a notice. Pin `vmImage: ubuntu-24.04` for fully reproducible runs |
+
+---
+
 ## Working with Git: branch, commit, pull request
 
 Changes reach `main` only through a pull request, the same flow app teams use to
@@ -650,3 +830,11 @@ az group delete --name rg-monitoring-tfstate
 
 `terraform destroy` deletes the monitors and dashboards; the second command deletes the
 state storage.
+
+If you set up the pipeline, also:
+
+- delete the Azure DevOps project (Project settings > Overview > **Delete**), which removes
+  the pipeline, variable group, environment and service connection;
+- delete the service connection's app registration in Microsoft Entra ID if it remains
+  (App registrations > the one named after your organization and project);
+- remove the budget, or keep it as a safety net while the subscription exists.
