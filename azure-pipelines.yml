@@ -98,8 +98,10 @@ stages:
               azureSubscription: ${{ variables.azureServiceConnection }}
               scriptType: bash
               scriptLocation: inlineScript
+              addSpnToEnvironment: true
               inlineScript: |
                 set -euo pipefail
+                source pipelines/scripts/arm-auth-env.sh
                 terraform -chdir=$(tfDir) plan -input=false -out=tfplan \
                   -var="datadog_api_url=$(DD_API_URL)"
                 terraform -chdir=$(tfDir) show -json tfplan > plan.json
@@ -146,8 +148,10 @@ stages:
                     azureSubscription: ${{ variables.azureServiceConnection }}
                     scriptType: bash
                     scriptLocation: inlineScript
+                    addSpnToEnvironment: true
                     inlineScript: |
                       set -euo pipefail
+                      source pipelines/scripts/arm-auth-env.sh
                       cp "$(Pipeline.Workspace)/tfplan/tfplan" $(tfDir)/tfplan
                       terraform -chdir=$(tfDir) apply -input=false tfplan
                       terraform -chdir=$(tfDir) output dashboards

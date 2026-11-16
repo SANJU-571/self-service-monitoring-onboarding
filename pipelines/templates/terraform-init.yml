@@ -11,8 +11,10 @@ steps:
       azureSubscription: ${{ parameters.serviceConnection }}
       scriptType: bash
       scriptLocation: inlineScript
+      addSpnToEnvironment: true # exposes the service connection identity to the script
       inlineScript: |
         set -euo pipefail
+        source pipelines/scripts/arm-auth-env.sh
         terraform -chdir=${{ parameters.tfDir }} init -input=false \
           -backend-config="resource_group_name=$(TFSTATE_RESOURCE_GROUP)" \
           -backend-config="storage_account_name=$(TFSTATE_STORAGE_ACCOUNT)" \
