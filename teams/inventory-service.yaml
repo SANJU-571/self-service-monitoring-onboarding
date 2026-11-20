@@ -11,7 +11,7 @@ runbook_url: https://github.com/SANJU-571/self-service-monitoring-onboarding/blo
 
 monitors:
   latency_ms:
-    warning: 600
+    warning: 250
     critical: 500
   error_rate_pct:
     warning: 2
