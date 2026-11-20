@@ -1,0 +1,23 @@
+# Onboarding request for the inventory team
+team: inventory
+service: inventory-service
+env: dev
+owner: inventory-team@example.com
+
+notify:
+  - "@inventory-team@example.com"
+
+runbook_url: https://github.com/SANJU-571/self-service-monitoring-onboarding/blob/main/docs/runbook.md
+
+monitors:
+  latency_ms:
+    warning: 600
+    critical: 500
+  error_rate_pct:
+    warning: 2
+    critical: 5
+  cpu_pct:
+    warning: 75
+    critical: 90
+  no_traffic:
+    enabled: true
