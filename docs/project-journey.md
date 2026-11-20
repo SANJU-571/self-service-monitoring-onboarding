@@ -9,10 +9,11 @@ was really happening, using everyday comparisons. No technical background needed
 
 ## The short version
 
-We went from an empty laptop to a system that sets up app alarms automatically. We proved
-it with a fake outage, rebuilt it in seconds when an account expired, and then handed the
-whole job to an automatic pipeline that waits for a person's approval before changing
-anything.
+We went from an empty laptop to a working self-service system. A team hands in one short
+form, an automatic pipeline checks it and shows what will change, a person approves, and
+the alarms appear in Datadog. We proved it with a fake outage, rebuilt it in seconds when
+an account expired, and finally watched a brand-new team onboard itself. Only the final
+polish is left.
 
 1. **Got the tools** onto the laptop, like stocking a toolbox before a job.
 2. **Tried the project at home first** and broke it on purpose to watch the safety checks
@@ -27,6 +28,9 @@ anything.
 9. **Lost an account and rebuilt everything** from the files with one command.
 10. **Built the conveyor belt:** an Azure DevOps pipeline now checks, previews and, after
     approval, builds every change by itself.
+11. **Onboarded a new team the self-service way:** the inventory team handed in one form;
+    the pipeline blocked a mistake, then built their alarms after a one-line fix and an
+    approval.
 
 ## The journey at a glance
 
@@ -48,12 +52,11 @@ flowchart TB
     classDef done fill:#e6f4ea,stroke:#2e7d32;
     classDef next fill:#e8f0fe,stroke:#1a73e8,stroke-width:2px;
     classDef later fill:#ffffff,stroke:#9e9e9e,stroke-dasharray: 4 4;
-    class S1,S2,S3,S4,S5,S6,S7,S8,S9,S10 done;
-    class S11 next;
-    class S12 later;
+    class S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11 done;
+    class S12 next;
 ```
 
-Green stages are done, blue is next, dashed is still to come.
+Green stages are done; blue is the one stage left.
 
 ## The idea behind it all
 
@@ -299,6 +302,44 @@ in URL". An invisible Tab character had been pasted at the end of the Datadog ad
 the safe. Retyping the address by hand fixed it, and the next run was green from start to
 finish: check, quote ("no changes", because everything already matched), approval, build.
 
+## Stage 11: A new team onboards itself
+
+We played a brand-new team, inventory, and got their app watched using nothing but one
+form and one approval. The pipeline blocked their first attempt because of a mistake,
+exactly as designed.
+
+**First, a lock on the rulebook.** We told GitHub that nothing may be filed into the
+official copy (`main`) unless it comes through a pull request **and** the conveyor belt's
+check is green. Before this, a red check was only a warning; now GitHub greys out the
+Merge button.
+
+1. **The team filled in its form** (`teams/inventory-service.yaml`) and handed it in as a
+   pull request, with a deliberate mistake: warning at 600 ms but alert at 500 ms, the
+   backwards fuel gauge again.
+2. **The belt caught it.** The check turned red and GitHub showed "Required checks
+   failing" with the Merge button disabled. The error named the file, the setting and the
+   fix: "warning (600) must be below critical (500)". The quote step never even ran.
+3. **The team fixed one number** (warning 250), checked it on the laptop first, and pushed
+   again. The belt restarted by itself and both checks turned green.
+4. **A reviewer read the quote:** 5 things to add (4 alarms and a dashboard) for inventory
+   only, nothing changed or removed for the other teams.
+5. **Merged, then approved.** The run for the merged change paused at the last station
+   until someone clicked Approve. Runs for pull requests never build; they only check and
+   quote, which is why an earlier run showed "Apply skipped".
+6. **The alarms appeared.** Datadog showed four inventory alarms and a dashboard with
+   inventory's own warning and alert lines. With the crash-test dummy pretending to be the
+   inventory app, all four showed OK.
+
+| Kind of approval | When | What it protects |
+| --- | --- | --- |
+| GitHub pull request review | Before merging | The change going into the official copy. Authors can't approve their own, so a solo project leaves a comment instead |
+| Azure DevOps environment approval | After merging, before building | The real change in Datadog |
+
+**Why this stage matters most:** nobody ran Terraform by hand, nobody clicked in Datadog,
+and nobody shared keys. A team got working monitoring in minutes, and a mistake was
+stopped before it could do any harm. That is the whole promise of the project,
+demonstrated.
+
 ## Problems we hit, and what each taught us
 
 | Problem | What was really going on | Lesson |
@@ -315,15 +356,18 @@ finish: check, quote ("no changes", because everything already matched), approva
 | The free build machine request link was dead | Microsoft replaced the form with billing linking | Check current documentation; processes change |
 | "You do not have access" (401) in Azure DevOps | The browser had switched to another Microsoft account | Keep one browser profile per set of accounts |
 | "Invalid character in URL" in the pipeline | A hidden Tab was pasted into a setting | Type short values by hand; read errors closely |
+| Required status check not saved | The check's name was typed but not clicked in the dropdown | Confirm settings after saving |
+| "Apply skipped due to conditions" | That was the pull request's run, which never builds by design | Know which run you're looking at: the merge run is the one that builds |
 
 ## What comes next
 
-1. **The self-service demo.** A new pretend team (inventory) hands in a form through
-   GitHub, and we watch the conveyor belt check it, quote it, wait for approval and build
-   their alarms, with nobody touching Terraform. We'll also submit a broken form first to
-   watch the pipeline block it.
-2. **Polish.** Add screenshots of the fire drill and the pipeline to the project page, add
-   an open-source licence, and practise explaining the project.
+1. **Polish.** Add screenshots of the fire drill, the green pipeline, the blocked pull
+   request and the inventory dashboard to the project page. Add an open-source licence,
+   pin the build machine's operating system version, tidy up old branches, and practise
+   explaining the project.
+2. **Cleanup.** Remove the alarms and dashboards with Terraform, and delete the Azure
+   storage and the Azure DevOps project, so nothing keeps costing money. The code, docs and
+   screenshots stay on GitHub.
 
 When it's all done, a team gets working alarms by handing in one short form and waiting
 for one approval: fast, consistent and safe, with nobody waiting on an expert.
