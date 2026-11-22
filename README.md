@@ -21,6 +21,34 @@ monitors:
 Merge it, and the pipeline creates four monitors and a service dashboard with the
 team's thresholds drawn on the graphs.
 
+## Demo
+
+A new team onboarded through a pull request. The first commit set the latency warning
+above the critical threshold, so validation failed and branch protection blocked the
+merge. One fixed number later the checks passed, and after merge and approval the
+pipeline created the team's monitors and dashboard.
+
+| Mistake caught, merge blocked | Fixed, ready to merge |
+| --- | --- |
+| ![Pull request blocked by a failing required check](docs/images/pr-blocked.png) | ![Pull request with passing checks, ready to merge](docs/images/pr-ready-to-merge.png) |
+
+![Pipeline run: Validate, Plan and approval-gated Apply all green](docs/images/pipeline-stages.png)
+
+![The new team's dashboard, with its own warning and critical lines](docs/images/inventory-dashboard.png)
+
+The alert life cycle, using the demo metrics emitter's incident mode:
+
+| Healthy | Incident: error rate ALERT, latency WARN | Recovered |
+| --- | --- | --- |
+| ![Dashboard, all monitors OK](docs/images/dashboard-healthy.png) | ![Dashboard during a simulated incident](docs/images/dashboard-alerting.png) | ![Dashboard after recovery](docs/images/dashboard-recovered.png) |
+
+More reading:
+[what the project is for](docs/project-explained.md) ·
+[how it was built](docs/project-journey.md) ·
+[step-by-step setup](docs/setup-walkthrough.md) ·
+[presenting it](docs/presenting.md) ·
+[runbook](docs/runbook.md)
+
 ## How it works
 
 ```mermaid
@@ -114,7 +142,8 @@ python tools/emit_demo_metrics.py --service payments-api --env dev --incident   
 ## Onboarding a new service
 1. Copy `teams/payments-api.yaml` to `teams/<your-service>.yaml` (or `<your-service>-prod.yaml`).
 2. Set your team, owner, notification handles and thresholds.
-3. Open a pull request. The pipeline validates it and posts the plan.
+3. Open a pull request. The pipeline validates it and posts the plan. `main` is protected,
+   so the pull request can only be merged once the pipeline check is green.
 4. After merge and approval, your dashboard link appears in the Apply log.
 
 ## Cleaning up
@@ -122,3 +151,7 @@ python tools/emit_demo_metrics.py --service payments-api --env dev --incident   
 cd terraform && terraform destroy -var="datadog_api_url=..."
 az group delete --name rg-monitoring-tfstate
 ```
+
+## License
+
+[MIT](LICENSE)

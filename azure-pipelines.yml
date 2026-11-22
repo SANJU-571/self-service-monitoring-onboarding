@@ -22,7 +22,8 @@ pr:
     include: [main]
 
 pool:
-  vmImage: ubuntu-latest
+  # Pinned rather than ubuntu-latest, so the build image only changes when we choose to upgrade.
+  vmImage: ubuntu-24.04
 
 variables:
   - group: datadog-onboarding

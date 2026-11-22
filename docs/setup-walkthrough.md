@@ -1,4 +1,4 @@
-# Setup walkthrough: from zero to an automated pipeline
+# Setup walkthrough: from zero to self-service onboarding
 
 This guide follows the project from an empty Windows laptop to Datadog monitors that
 fire and recover, deployed by an approval-gated pipeline. Every step says **what** you do, **why** you do it, and **what the
@@ -18,6 +18,7 @@ For a plain-English explanation of what the project is for, see
 | [5. Datadog and the first apply](#phase-5-datadog-and-the-first-terraform-apply) | 6 monitors and 2 dashboards | ~1 h |
 | [6. Demo traffic and alerts](#phase-6-demo-traffic-and-alerts) | Alerts fire and recover | ~30 min |
 | [7. Azure DevOps pipeline](#phase-7-the-azure-devops-pipeline) | Validate, plan and approval-gated apply on every change | ~1-2 h |
+| [8. Self-service onboarding](#phase-8-onboard-a-new-service-through-a-pull-request) | A new team onboarded through a pull request | ~45 min |
 | [Working with Git](#working-with-git-branch-commit-pull-request) | Changes reach `main` through pull requests | ~15 min each |
 
 ## The idea in one minute
@@ -763,6 +764,125 @@ built.
 
 ---
 
+## Phase 8: Onboard a new service through a pull request
+
+**Why:** this is the demo that proves the self-service claim. A new team gets monitoring
+with one file and one approval, and a mistake is stopped before it reaches Datadog. Nobody
+runs Terraform or clicks in Datadog.
+
+### 8.1 Protect the main branch
+
+Without protection a red check is only advice: GitHub would still let someone merge.
+
+1. GitHub repo > **Settings** > **Branches** > **Add classic branch protection rule**.
+2. Branch name pattern `main`.
+3. Tick **Require a pull request before merging**. Set required approvals to **0** on a
+   solo project: GitHub doesn't let authors approve their own pull requests.
+4. Tick **Require status checks to pass before merging** and **Require branches to be up
+   to date**. In the search box type the pipeline's name and **click** the check
+   (`<owner>.<repo>`, provided by Azure Pipelines) so it appears under "Status checks that
+   are required". Typing it without clicking saves nothing.
+5. **Create**.
+
+### 8.2 Open a pull request with a deliberate mistake
+
+```cmd
+git checkout main
+git pull
+git checkout -b onboard/inventory-service
+```
+
+Create `teams\inventory-service.yaml` (the file name must match the service):
+
+```yaml
+team: inventory
+service: inventory-service
+env: dev
+owner: inventory-team@example.com
+notify:
+  - "@inventory-team@example.com"
+runbook_url: https://github.com/SANJU-571/self-service-monitoring-onboarding/blob/main/docs/runbook.md
+monitors:
+  latency_ms:
+    warning: 600     # deliberate mistake: above critical
+    critical: 500
+  error_rate_pct:
+    warning: 2
+    critical: 5
+  cpu_pct:
+    warning: 75
+    critical: 90
+  no_traffic:
+    enabled: true
+```
+
+```cmd
+git add teams\inventory-service.yaml
+git commit -m "Onboard inventory-service to Datadog monitoring"
+git push -u origin onboard/inventory-service
+```
+
+Open the pull request from the link Git prints.
+
+### 8.3 Watch the pipeline block it
+
+After a few minutes the PR shows **Required checks failing** and the **Merge pull request**
+button is disabled. Validate failed, so Plan never ran. The run's Errors box in Azure
+DevOps names the file, the field and the fix:
+
+```
+inventory-service.yaml: monitors/latency_ms: warning (600) must be below critical (500)
+```
+
+### 8.4 Fix it and review the plan
+
+Change the warning to `250`, check locally, and push to the same branch:
+
+```cmd
+python tools\validate_teams.py teams
+git add teams\inventory-service.yaml
+git commit -m "Fix inventory-service latency thresholds"
+git push
+```
+
+The pipeline restarts by itself. When it's green, open the run and read the plan summary
+as a reviewer would: only `inventory-service-dev` appears, with 5 creates (4 monitors and
+a dashboard), 0 updates and **0 deletes**. The PR shows **Ready to merge**.
+
+### 8.5 Merge, then approve the deployment
+
+1. **Merge pull request** > **Confirm merge** > **Delete branch**. As the author you can
+   only leave a **Comment** review on GitHub.
+2. The merge changes `teams/`, so a new run starts on `main`. Open it (branch `main`,
+   description "Merge pull request #..."), not the earlier PR run.
+3. When Apply shows **Waiting**, click **Review** > **Approve**. Apply runs the saved plan
+   and its log ends with `Apply complete! Resources: 5 added`.
+
+| Kind of approval | When | Protects |
+| --- | --- | --- |
+| GitHub pull request review | Before merge | The change going into `main` |
+| Azure DevOps environment approval | After merge, before Apply | The real change in Datadog |
+
+### 8.6 Check Datadog
+
+- `https://app.datadoghq.com/monitors/manage?q=team%3Ainventory` lists the four new
+  monitors, tagged `managed_by:terraform`.
+- **Dashboards** > `[DEV] inventory-service - Service Overview` shows the team's own
+  warning and critical lines.
+- Optional: `python tools\emit_demo_metrics.py --service inventory-service --env dev`
+  fills the dashboard and turns the monitors **OK**. Press Ctrl+C to stop.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| A red PR can still be merged | No required status check is selected in the branch rule; click the check name in the dropdown and save |
+| "Apply: Skipped due to conditions" | You're looking at the pull request's run; PR runs never apply. Open the run for the merge on `main` |
+| Approve and Request changes are greyed out on GitHub | Authors can't review their own PRs; leave a Comment |
+| No run starts after merging | The `main` trigger only watches `teams`, `terraform`, `schema`, `tools`, `pipelines` and `azure-pipelines.yml`; docs-only merges don't run the pipeline |
+
+---
+
 ## Working with Git: branch, commit, pull request
 
 Changes reach `main` only through a pull request, the same flow app teams use to
@@ -800,6 +920,8 @@ git branch -d docs/my-change
 **Habits**
 
 - Add files by name rather than `git add .`, so nothing unexpected is committed.
+- Turn on **Settings > General > Automatically delete head branches**, so merged branches
+  are removed on GitHub by themselves.
 - Before committing, check `git status` does not list `backend.hcl`, `*.tfstate` or any
   key file.
 - Review the pushed diff on GitHub before merging. That is how a leftover line in
